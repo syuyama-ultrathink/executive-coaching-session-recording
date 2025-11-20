@@ -1,0 +1,36 @@
+// Prisma schema file
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./recordings.db"
+}
+
+model Recording {
+  id          Int      @id @default(autoincrement())
+  fileName    String
+  filePath    String
+  micPath     String?
+  speakerPath String?
+  mixedPath   String?
+  recordedAt  DateTime
+  duration    Int      @default(0) // 録音時間（秒）
+  fileSize    Int?     // ファイルサイズ（バイト）
+  memo        String?
+  quality     String   // 'standard' | 'high' | 'premium'
+  isDeleted   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([recordedAt])
+  @@index([isDeleted])
+}
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
