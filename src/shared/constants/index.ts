@@ -40,6 +40,7 @@ export const IPC_CHANNELS = {
   GET_RECORDINGS: 'get-recordings',
   DELETE_RECORDING: 'delete-recording',
   RENAME_RECORDING: 'rename-recording',
+  UPDATE_RECORDING_MEMO: 'update-recording-memo',
 
   // Settings
   GET_SETTING: 'get-setting',

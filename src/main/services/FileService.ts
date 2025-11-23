@@ -5,6 +5,7 @@ import ffmpeg from 'fluent-ffmpeg';
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import type { RecordingFiles, RecordingMetadata } from '../../shared/types';
 import databaseService from './DatabaseService';
+import { logger } from '../utils/logger';
 
 // FFmpegのパスを設定
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
@@ -31,35 +32,47 @@ class FileService {
     metadata: RecordingMetadata,
     duration: number
   ): Promise<RecordingFiles> {
-    const timestamp = this.generateTimestamp();
-    const baseName = metadata.fileName
-      ? `${timestamp}_${metadata.fileName}`
-      : timestamp;
+    logger.info('FileService', 'saveRecording called', { metadata, duration });
 
-    const micPath = path.join(this.basePath, `${baseName}_mic.mp3`);
-    const speakerPath = path.join(this.basePath, `${baseName}_speaker.mp3`);
-    const mixedPath = path.join(this.basePath, `${baseName}_mixed.mp3`);
+    try {
+      const timestamp = this.generateTimestamp();
+      const baseName = metadata.fileName
+        ? `${timestamp}_${metadata.fileName}`
+        : timestamp;
+      logger.debug('FileService', 'Generated base name', { baseName, timestamp });
 
-    console.log("Saving recording files:", { micPath, speakerPath, mixedPath });
+      const micPath = path.join(this.basePath, `${baseName}_mic.mp3`);
+      const speakerPath = path.join(this.basePath, `${baseName}_speaker.mp3`);
+      const mixedPath = path.join(this.basePath, `${baseName}_mixed.mp3`);
 
-    await databaseService.createRecording({
-      fileName: baseName,
-      filePath: mixedPath,
-      micPath,
-      speakerPath,
-      mixedPath,
-      duration,
-      fileSize: 0,
-      memo: metadata.memo,
-      quality: metadata.quality
-    });
+      logger.info('FileService', 'File paths generated', { micPath, speakerPath, mixedPath });
 
-    return { micPath, speakerPath, mixedPath };
+      logger.debug('FileService', 'Creating database record...');
+      await databaseService.createRecording({
+        fileName: baseName,
+        filePath: mixedPath,
+        micPath,
+        speakerPath,
+        mixedPath,
+        duration,
+        fileSize: 0,
+        memo: metadata.memo,
+        quality: metadata.quality
+      });
+      logger.info('FileService', 'Database record created successfully');
+
+      logger.info('FileService', 'saveRecording completed successfully', { micPath, speakerPath, mixedPath });
+      return { micPath, speakerPath, mixedPath };
+    } catch (error) {
+      logger.error('FileService', 'saveRecording failed', error);
+      throw error;
+    }
   }
 
   async saveRecordingFromBlobs(
     micBuffer: Buffer,
     systemBuffer: Buffer,
+    mixBuffer: Buffer,
     metadata: RecordingMetadata
   ): Promise<RecordingFiles & { duration: number }> {
     const timestamp = this.generateTimestamp();
@@ -69,12 +82,14 @@ class FileService {
 
     const tempMicWebm = path.join(this.basePath, `${baseName}_mic_temp.webm`);
     const tempSystemWebm = path.join(this.basePath, `${baseName}_system_temp.webm`);
+    const tempMixWebm = path.join(this.basePath, `${baseName}_mix_temp.webm`);
 
     const micPath = path.join(this.basePath, `${baseName}_mic.mp3`);
     const speakerPath = path.join(this.basePath, `${baseName}_speaker.mp3`);
     const mixedPath = path.join(this.basePath, `${baseName}_mixed.mp3`);
 
     try {
+      // WebMファイルとして保存
       if (micBuffer.length > 0) {
         await fs.writeFile(tempMicWebm, micBuffer);
         console.log(`Saved mic WebM: ${tempMicWebm} (${micBuffer.length} bytes)`);
@@ -85,8 +100,14 @@ class FileService {
         console.log(`Saved system WebM: ${tempSystemWebm} (${systemBuffer.length} bytes)`);
       }
 
+      if (mixBuffer.length > 0) {
+        await fs.writeFile(tempMixWebm, mixBuffer);
+        console.log(`Saved mix WebM: ${tempMixWebm} (${mixBuffer.length} bytes)`);
+      }
+
       let duration = 0;
 
+      // MP3に変換
       if (micBuffer.length > 0) {
         duration = await this.convertToMp3(tempMicWebm, micPath);
         console.log(`Converted mic to MP3: ${micPath}, duration: ${duration}s`);
@@ -97,15 +118,23 @@ class FileService {
         console.log(`Converted system to MP3: ${speakerPath}`);
       }
 
-      if (micBuffer.length > 0) {
+      if (mixBuffer.length > 0) {
+        duration = await this.convertToMp3(tempMixWebm, mixedPath);
+        console.log(`Converted mix to MP3: ${mixedPath}, duration: ${duration}s`);
+      } else if (micBuffer.length > 0) {
+        // mixBufferがない場合は、micをコピー（後方互換性）
         await fs.copyFile(micPath, mixedPath);
       }
 
+      // 一時ファイルを削除
       if (micBuffer.length > 0) {
         await fs.unlink(tempMicWebm).catch(err => console.warn("Failed to delete temp mic file:", err));
       }
       if (systemBuffer.length > 0) {
         await fs.unlink(tempSystemWebm).catch(err => console.warn("Failed to delete temp system file:", err));
+      }
+      if (mixBuffer.length > 0) {
+        await fs.unlink(tempMixWebm).catch(err => console.warn("Failed to delete temp mix file:", err));
       }
 
       const fileSize = micBuffer.length > 0

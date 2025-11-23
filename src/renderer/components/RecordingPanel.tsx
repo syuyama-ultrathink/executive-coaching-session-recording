@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Card, Button, Input, Select, Space, Typography, Divider, message } from 'antd';
+import React, { useState, useEffect } from 'react';
+import { Card, Button, Input, Select, Space, Typography, Divider, message, Slider } from 'antd';
 import {
   PlayCircleOutlined,
   PauseCircleOutlined,
@@ -7,6 +7,7 @@ import {
   AudioOutlined
 } from '@ant-design/icons';
 import { useRecordingStore } from '../stores/recordingStore';
+import { useSettingsStore } from '../stores/settingsStore';
 import type { RecordingQuality } from '../../shared/types';
 import RecordingService from '../services/RecordingService';
 import LevelMeter from './LevelMeter';
@@ -35,6 +36,8 @@ const RecordingPanel: React.FC = () => {
     speakers,
     micLevel,
     speakerLevel,
+    micGain,
+    systemGain,
     setRecording,
     setPaused,
     setFileName,
@@ -42,9 +45,12 @@ const RecordingPanel: React.FC = () => {
     setQuality,
     setSelectedMicDevice,
     setSelectedSpeakerDevice,
+    setMicGain,
+    setSystemGain,
     reset
   } = useRecordingStore();
 
+  const { settings } = useSettingsStore();
   const [loading, setLoading] = useState(false);
 
   // 録音時間を HH:MM:SS 形式で表示
@@ -60,19 +66,76 @@ const RecordingPanel: React.FC = () => {
     try {
       setLoading(true);
 
-      // マイク録音開始
-      await RecordingService.startMicRecording();
+      // ヘッドホン使用を推奨する通知
+      message.info({
+        content: '🎧 最良の音質のため、ヘッドホンの使用を推奨します',
+        duration: 3,
+      });
+
+      // マイク録音開始（選択されたデバイスと音声処理設定を使用）
+      await RecordingService.startMicRecording(selectedMicDevice, {
+        echoCancellation: settings.echoCancellation,
+        autoGainControl: settings.autoGainControl,
+        noiseSuppression: settings.noiseSuppression,
+      });
 
       // システムオーディオ録音開始
+      let systemAudioSuccess = false;
       try {
         await RecordingService.startSystemRecording();
-        message.success('マイクとシステムオーディオの録音を開始しました');
+        systemAudioSuccess = true;
       } catch (systemError) {
         console.warn('System audio recording failed, continuing with mic only:', systemError);
+      }
+
+      // 両方のストリームが開始されたら、ミックス録音を開始
+      if (systemAudioSuccess) {
+        try {
+          RecordingService.startMixRecording();
+          message.success('マイク、システムオーディオ、ミックスの録音を開始しました');
+        } catch (mixError) {
+          console.warn('Mix recording failed:', mixError);
+          message.warning('マイクとシステムオーディオの個別録音のみ開始しました');
+        }
+      } else {
         message.warning('マイクのみの録音を開始しました（システムオーディオの取得に失敗）');
       }
 
+      // 録音時間をリセットしてから録音開始
+      useRecordingStore.setState({ duration: 0 });
       setRecording(true);
+
+      // 録音開始後、デバイスリストを更新（メディア権限が付与されたため、正しいラベルが取得できる）
+      try {
+        const deviceInfos = await navigator.mediaDevices.enumerateDevices();
+        const newMicrophones: Array<{ id: string; name: string; maxInputChannels: number; maxOutputChannels: number }> = [];
+        const newSpeakers: Array<{ id: string; name: string; maxInputChannels: number; maxOutputChannels: number }> = [];
+
+        deviceInfos.forEach((device) => {
+          if (device.kind === 'audioinput') {
+            newMicrophones.push({
+              id: device.deviceId,
+              name: device.label || `Microphone ${newMicrophones.length + 1}`,
+              maxInputChannels: 2,
+              maxOutputChannels: 0
+            });
+          } else if (device.kind === 'audiooutput') {
+            newSpeakers.push({
+              id: device.deviceId,
+              name: device.label || `Speaker ${newSpeakers.length + 1}`,
+              maxInputChannels: 0,
+              maxOutputChannels: 2
+            });
+          }
+        });
+
+        useRecordingStore.setState({
+          microphones: newMicrophones,
+          speakers: newSpeakers
+        });
+      } catch (error) {
+        console.warn('Failed to refresh device list:', error);
+      }
     } catch (error) {
       message.error('録音開始に失敗しました');
       console.error(error);
@@ -86,13 +149,20 @@ const RecordingPanel: React.FC = () => {
     try {
       setLoading(true);
 
-      // RecordingServiceから録音データ取得
-      const { micBlob, systemBlob } = await RecordingService.stopRecording();
+      // RecordingServiceから録音データ取得（3つのBlob）
+      const { micBlob, systemBlob, mixBlob } = await RecordingService.stopRecording();
+
+      console.log('Stopped recording, blob sizes:', {
+        mic: micBlob.size,
+        system: systemBlob.size,
+        mix: mixBlob.size
+      });
 
       // Main Processにファイル保存を依頼
       const result = await window.electronAPI.saveRecordingFiles(
         micBlob,
         systemBlob,
+        mixBlob,
         {
           fileName,
           memo,
@@ -133,6 +203,60 @@ const RecordingPanel: React.FC = () => {
     }
   };
 
+  // レベルメーター更新
+  useEffect(() => {
+    if (!isRecording || isPaused) return;
+
+    const intervalId = setInterval(() => {
+      const micLevel = RecordingService.getMicLevel();
+      const systemLevel = RecordingService.getSystemLevel();
+
+      // storeを直接更新
+      useRecordingStore.setState({
+        micLevel,
+        speakerLevel: systemLevel
+      });
+    }, 100); // 100msごとに更新
+
+    return () => clearInterval(intervalId);
+  }, [isRecording, isPaused]);
+
+  // 録音時間のカウントアップ
+  useEffect(() => {
+    if (!isRecording || isPaused) return;
+
+    const intervalId = setInterval(() => {
+      useRecordingStore.setState((state) => ({
+        duration: state.duration + 1
+      }));
+    }, 1000); // 1秒ごとに更新
+
+    return () => clearInterval(intervalId);
+  }, [isRecording, isPaused]);
+
+  // ホットキーイベントリスナー
+  useEffect(() => {
+    if (!window.electronAPI) return;
+
+    // 録音開始/停止のホットキー
+    window.electronAPI.onHotkeyToggleRecording(() => {
+      console.log('Hotkey: Toggle Recording');
+      if (isRecording) {
+        handleStop();
+      } else {
+        handleStart();
+      }
+    });
+
+    // 一時停止/再開のホットキー
+    window.electronAPI.onHotkeyTogglePause(() => {
+      console.log('Hotkey: Toggle Pause');
+      if (isRecording) {
+        handlePauseResume();
+      }
+    });
+  }, [isRecording, isPaused]); // 依存配列に状態を追加
+
   return (
     <Card
       style={{
@@ -170,16 +294,54 @@ const RecordingPanel: React.FC = () => {
 
       <Divider />
 
-      {/* レベルメーター */}
+      {/* レベルメーターと音量調整 */}
       <div style={{ marginBottom: 24 }}>
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
           <div>
-            <Text strong>マイクレベル</Text>
-            <LevelMeter level={micLevel} />
+            <Space direction="vertical" style={{ width: '100%' }} size="small">
+              <Text strong>マイクレベル</Text>
+              <LevelMeter level={micLevel} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Text style={{ minWidth: 80 }}>音量調整:</Text>
+                <Slider
+                  min={0}
+                  max={300}
+                  value={Math.round(micGain * 100)}
+                  onChange={(value) => {
+                    const gain = value / 100;
+                    setMicGain(gain);
+                    RecordingService.setMicGain(gain);
+                  }}
+                  disabled={!isRecording}
+                  style={{ flex: 1 }}
+                  tooltip={{ formatter: (value) => `${value}%` }}
+                />
+                <Text style={{ minWidth: 50, textAlign: 'right' }}>{Math.round(micGain * 100)}%</Text>
+              </div>
+            </Space>
           </div>
           <div>
-            <Text strong>スピーカーレベル</Text>
-            <LevelMeter level={speakerLevel} />
+            <Space direction="vertical" style={{ width: '100%' }} size="small">
+              <Text strong>スピーカーレベル</Text>
+              <LevelMeter level={speakerLevel} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Text style={{ minWidth: 80 }}>音量調整:</Text>
+                <Slider
+                  min={0}
+                  max={300}
+                  value={Math.round(systemGain * 100)}
+                  onChange={(value) => {
+                    const gain = value / 100;
+                    setSystemGain(gain);
+                    RecordingService.setSystemGain(gain);
+                  }}
+                  disabled={!isRecording}
+                  style={{ flex: 1 }}
+                  tooltip={{ formatter: (value) => `${value}%` }}
+                />
+                <Text style={{ minWidth: 50, textAlign: 'right' }}>{Math.round(systemGain * 100)}%</Text>
+              </div>
+            </Space>
           </div>
         </Space>
       </div>

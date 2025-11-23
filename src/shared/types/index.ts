@@ -72,12 +72,13 @@ export interface ElectronAPI {
   getDesktopSources?: () => Promise<DesktopCapturerSource[]>;
 
   // Save recording files
-  saveRecordingFiles?: (micBlob: Blob, systemBlob: Blob, metadata: RecordingMetadata) => Promise<{ success: boolean; error?: string }>;
+  saveRecordingFiles?: (micBlob: Blob, systemBlob: Blob, mixBlob: Blob, metadata: RecordingMetadata) => Promise<{ success: boolean; error?: string }>;
 
   // Recordings
   getRecordings: () => Promise<Recording[]>;
   deleteRecording: (id: number) => Promise<{ success: boolean; error?: string }>;
   renameRecording: (id: number, newName: string) => Promise<{ success: boolean; error?: string }>;
+  updateRecordingMemo: (id: number, memo: string) => Promise<{ success: boolean; error?: string }>;
 
   // Settings
   getSetting: (key: string) => Promise<string | null>;
@@ -86,6 +87,8 @@ export interface ElectronAPI {
   // Events
   onRecordingProgress: (callback: (progress: RecordingProgress) => void) => void;
   onRecordingError: (callback: (error: string) => void) => void;
+  onHotkeyToggleRecording: (callback: () => void) => void;
+  onHotkeyTogglePause: (callback: () => void) => void;
 }
 
 declare global {

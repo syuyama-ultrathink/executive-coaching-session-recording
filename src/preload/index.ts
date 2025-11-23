@@ -13,6 +13,7 @@ const IPC_CHANNELS = {
   GET_RECORDINGS: 'get-recordings',
   DELETE_RECORDING: 'delete-recording',
   RENAME_RECORDING: 'rename-recording',
+  UPDATE_RECORDING_MEMO: 'update-recording-memo',
   GET_SETTING: 'get-setting',
   SET_SETTING: 'set-setting'
 } as const;
@@ -42,18 +43,21 @@ const electronAPI: ElectronAPI = {
   },
 
   // Save recording files
-  saveRecordingFiles: async (micBlob: Blob, systemBlob: Blob, metadata: RecordingMetadata) => {
+  saveRecordingFiles: async (micBlob: Blob, systemBlob: Blob, mixBlob: Blob, metadata: RecordingMetadata) => {
     // BlobをArrayBufferに変換
     const micBuffer = await micBlob.arrayBuffer();
     const systemBuffer = await systemBlob.arrayBuffer();
+    const mixBuffer = await mixBlob.arrayBuffer();
 
     // ArrayBufferをUint8Arrayに変換
     const micData = new Uint8Array(micBuffer);
     const systemData = new Uint8Array(systemBuffer);
+    const mixData = new Uint8Array(mixBuffer);
 
     return ipcRenderer.invoke('save-recording-files', {
       micData: Array.from(micData),
       systemData: Array.from(systemData),
+      mixData: Array.from(mixData),
       metadata
     });
   },
@@ -67,6 +71,9 @@ const electronAPI: ElectronAPI = {
 
   renameRecording: (id: number, newName: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.RENAME_RECORDING, id, newName),
+
+  updateRecordingMemo: (id: number, memo: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.UPDATE_RECORDING_MEMO, id, memo),
 
   // Settings
   getSetting: (key: string) =>
@@ -85,6 +92,19 @@ const electronAPI: ElectronAPI = {
   onRecordingError: (callback: (error: string) => void) => {
     ipcRenderer.on(IPC_CHANNELS.RECORDING_ERROR, (_event, error) => {
       callback(error);
+    });
+  },
+
+  // Hotkey Events
+  onHotkeyToggleRecording: (callback: () => void) => {
+    ipcRenderer.on('hotkey-toggle-recording', () => {
+      callback();
+    });
+  },
+
+  onHotkeyTogglePause: (callback: () => void) => {
+    ipcRenderer.on('hotkey-toggle-pause', () => {
+      callback();
     });
   }
 };

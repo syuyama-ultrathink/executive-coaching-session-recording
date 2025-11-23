@@ -4,6 +4,7 @@ import { IPC_CHANNELS } from '../../shared/constants';
 import audioCaptureService from '../services/AudioCaptureService';
 import fileService from '../services/FileService';
 import { getMainWindow } from '../index';
+import { logger } from '../utils/logger';
 
 // 現在の録音状態
 let recordingStartTime: number | null = null;
@@ -17,23 +18,28 @@ export function registerRecordingHandlers() {
     IPC_CHANNELS.START_RECORDING,
     async (_event, options: AudioCaptureOptions & RecordingMetadata) => {
       try {
-        console.log('IPC: Start recording', options);
+        logger.info('RecordingHandler', 'Start recording requested', options);
 
         // 音声キャプチャ開始
+        logger.debug('RecordingHandler', 'Starting audio capture service...');
         await audioCaptureService.startCapture(options);
+        logger.info('RecordingHandler', 'Audio capture service started');
 
         // 録音開始時刻を記録
         recordingStartTime = Date.now();
+        logger.debug('RecordingHandler', 'Recording start time set', { startTime: recordingStartTime });
 
         // 進捗状況の定期送信を開始
         startProgressReporting();
+        logger.debug('RecordingHandler', 'Progress reporting started');
 
+        logger.info('RecordingHandler', 'Recording started successfully');
         return {
           success: true,
           id: 1 // TODO: 実際の録音IDを返す
         };
       } catch (error) {
-        console.error('Failed to start recording:', error);
+        logger.error('RecordingHandler', 'Failed to start recording', error);
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error'
@@ -47,37 +53,46 @@ export function registerRecordingHandlers() {
    */
   ipcMain.handle(IPC_CHANNELS.STOP_RECORDING, async (_event) => {
     try {
-      console.log('IPC: Stop recording');
+      logger.info('RecordingHandler', 'Stop recording requested');
 
       // 進捗報告を停止
+      logger.debug('RecordingHandler', 'Stopping progress reporting...');
       stopProgressReporting();
+      logger.debug('RecordingHandler', 'Progress reporting stopped');
 
       // 録音時間を計算
       const duration = recordingStartTime
         ? Math.floor((Date.now() - recordingStartTime) / 1000)
         : 0;
+      logger.info('RecordingHandler', 'Recording duration calculated', { duration, startTime: recordingStartTime });
 
       // 音声キャプチャ停止
+      logger.debug('RecordingHandler', 'Stopping audio capture service...');
       audioCaptureService.stopCapture();
+      logger.info('RecordingHandler', 'Audio capture service stopped');
 
       // ファイル保存
-      const files = await fileService.saveRecording(
-        {
-          fileName: 'recording',
-          quality: 'high',
-          memo: ''
-        },
-        duration
-      );
+      logger.debug('RecordingHandler', 'Saving recording files...');
+      const metadata = {
+        fileName: 'recording',
+        quality: 'high' as const,
+        memo: ''
+      };
+      logger.debug('RecordingHandler', 'File metadata', metadata);
+
+      const files = await fileService.saveRecording(metadata, duration);
+      logger.info('RecordingHandler', 'Recording files saved', files);
 
       recordingStartTime = null;
+      logger.debug('RecordingHandler', 'Recording state reset');
 
+      logger.info('RecordingHandler', 'Recording stopped successfully');
       return {
         success: true,
         files
       };
     } catch (error) {
-      console.error('Failed to stop recording:', error);
+      logger.error('RecordingHandler', 'Failed to stop recording', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
@@ -90,13 +105,14 @@ export function registerRecordingHandlers() {
    */
   ipcMain.handle(IPC_CHANNELS.PAUSE_RECORDING, async (_event) => {
     try {
-      console.log('IPC: Pause recording');
+      logger.info('RecordingHandler', 'Pause recording requested');
       audioCaptureService.pauseCapture();
       stopProgressReporting();
+      logger.info('RecordingHandler', 'Recording paused successfully');
 
       return { success: true };
     } catch (error) {
-      console.error('Failed to pause recording:', error);
+      logger.error('RecordingHandler', 'Failed to pause recording', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
@@ -109,13 +125,14 @@ export function registerRecordingHandlers() {
    */
   ipcMain.handle(IPC_CHANNELS.RESUME_RECORDING, async (_event) => {
     try {
-      console.log('IPC: Resume recording');
+      logger.info('RecordingHandler', 'Resume recording requested');
       audioCaptureService.resumeCapture();
       startProgressReporting();
+      logger.info('RecordingHandler', 'Recording resumed successfully');
 
       return { success: true };
     } catch (error) {
-      console.error('Failed to resume recording:', error);
+      logger.error('RecordingHandler', 'Failed to resume recording', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
@@ -161,23 +178,27 @@ export function registerRecordingHandlers() {
   ipcMain.handle('save-recording-files', async (_event, data: {
     micData: number[];
     systemData: number[];
+    mixData: number[];
     metadata: RecordingMetadata;
   }) => {
     try {
       console.log('IPC: Save recording files', {
         micDataSize: data.micData.length,
         systemDataSize: data.systemData.length,
+        mixDataSize: data.mixData.length,
         metadata: data.metadata
       });
 
       // 配列をBufferに変換
       const micBuffer = Buffer.from(data.micData);
       const systemBuffer = Buffer.from(data.systemData);
+      const mixBuffer = Buffer.from(data.mixData);
 
       // FileServiceでファイル保存とMP3変換
       const result = await fileService.saveRecordingFromBlobs(
         micBuffer,
         systemBuffer,
+        mixBuffer,
         data.metadata
       );
 

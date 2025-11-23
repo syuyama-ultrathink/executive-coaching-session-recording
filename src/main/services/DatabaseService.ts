@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import type { Recording, RecordingQuality } from '../../shared/types';
+import { logger } from '../utils/logger';
 
 class DatabaseService {
   private prisma: PrismaClient;
@@ -35,23 +36,35 @@ class DatabaseService {
     memo?: string;
     quality: RecordingQuality;
   }): Promise<Recording> {
-    const recording = await this.prisma.recording.create({
-      data: {
-        fileName: data.fileName,
-        filePath: data.filePath,
-        micPath: data.micPath,
-        speakerPath: data.speakerPath,
-        mixedPath: data.mixedPath,
-        recordedAt: new Date(),
-        duration: data.duration,
-        fileSize: data.fileSize,
-        memo: data.memo || '',
-        quality: data.quality,
-        isDeleted: false
-      }
+    logger.info('DatabaseService', 'createRecording called', {
+      fileName: data.fileName,
+      duration: data.duration,
+      quality: data.quality
     });
 
-    return recording as Recording;
+    try {
+      const recording = await this.prisma.recording.create({
+        data: {
+          fileName: data.fileName,
+          filePath: data.filePath,
+          micPath: data.micPath,
+          speakerPath: data.speakerPath,
+          mixedPath: data.mixedPath,
+          recordedAt: new Date(),
+          duration: data.duration,
+          fileSize: data.fileSize,
+          memo: data.memo || '',
+          quality: data.quality,
+          isDeleted: false
+        }
+      });
+
+      logger.info('DatabaseService', 'Recording created successfully', { id: recording.id });
+      return recording as Recording;
+    } catch (error) {
+      logger.error('DatabaseService', 'Failed to create recording', error);
+      throw error;
+    }
   }
 
   /**

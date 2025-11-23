@@ -51,4 +51,23 @@ export function registerFileHandlers() {
       }
     }
   );
+
+  /**
+   * 録音メモ更新
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.UPDATE_RECORDING_MEMO,
+    async (_event, id: number, memo: string) => {
+      try {
+        await databaseService.updateRecording(id, { memo });
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to update recording memo:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    }
+  );
 }

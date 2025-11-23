@@ -24,6 +24,10 @@ interface RecordingState {
   micLevel: number;
   speakerLevel: number;
 
+  // ゲイン（音量調整）
+  micGain: number;
+  systemGain: number;
+
   // Actions
   setRecording: (isRecording: boolean) => void;
   setPaused: (isPaused: boolean) => void;
@@ -35,6 +39,8 @@ interface RecordingState {
   setSelectedSpeakerDevice: (deviceId: string | undefined) => void;
   setDevices: (microphones: AudioDevice[], speakers: AudioDevice[]) => void;
   updateProgress: (progress: RecordingProgress) => void;
+  setMicGain: (gain: number) => void;
+  setSystemGain: (gain: number) => void;
   reset: () => void;
 }
 
@@ -52,6 +58,8 @@ export const useRecordingStore = create<RecordingState>((set) => ({
   speakers: [],
   micLevel: 0,
   speakerLevel: 0,
+  micGain: 1.0, // 100% (範囲: 0.0 ～ 3.0)
+  systemGain: 1.0, // 100% (範囲: 0.0 ～ 3.0)
 
   // Actions
   setRecording: (isRecording) => set({ isRecording }),
@@ -70,6 +78,9 @@ export const useRecordingStore = create<RecordingState>((set) => ({
       micLevel: progress.micLevel,
       speakerLevel: progress.speakerLevel
     }),
+
+  setMicGain: (gain) => set({ micGain: gain }),
+  setSystemGain: (gain) => set({ systemGain: gain }),
 
   reset: () =>
     set({
