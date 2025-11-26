@@ -3,6 +3,7 @@ import type { AudioCaptureOptions, RecordingMetadata } from '../../shared/types'
 import { IPC_CHANNELS } from '../../shared/constants';
 import audioCaptureService from '../services/AudioCaptureService';
 import fileService from '../services/FileService';
+import trayService from '../services/TrayService';
 import { getMainWindow } from '../index';
 import { logger } from '../utils/logger';
 
@@ -32,6 +33,10 @@ export function registerRecordingHandlers() {
         // 進捗状況の定期送信を開始
         startProgressReporting();
         logger.debug('RecordingHandler', 'Progress reporting started');
+
+        // トレイアイコンを更新
+        trayService.updateRecordingState(true, false);
+        trayService.showNotification('録音開始', '録音を開始しました');
 
         logger.info('RecordingHandler', 'Recording started successfully');
         return {
@@ -86,6 +91,10 @@ export function registerRecordingHandlers() {
       recordingStartTime = null;
       logger.debug('RecordingHandler', 'Recording state reset');
 
+      // トレイアイコンを更新
+      trayService.updateRecordingState(false, false);
+      trayService.showNotification('録音停止', `録音を停止しました（${duration}秒）`);
+
       logger.info('RecordingHandler', 'Recording stopped successfully');
       return {
         success: true,
@@ -108,6 +117,11 @@ export function registerRecordingHandlers() {
       logger.info('RecordingHandler', 'Pause recording requested');
       audioCaptureService.pauseCapture();
       stopProgressReporting();
+
+      // トレイアイコンを更新
+      trayService.updateRecordingState(true, true);
+      trayService.showNotification('録音一時停止', '録音を一時停止しました');
+
       logger.info('RecordingHandler', 'Recording paused successfully');
 
       return { success: true };
@@ -128,6 +142,11 @@ export function registerRecordingHandlers() {
       logger.info('RecordingHandler', 'Resume recording requested');
       audioCaptureService.resumeCapture();
       startProgressReporting();
+
+      // トレイアイコンを更新
+      trayService.updateRecordingState(true, false);
+      trayService.showNotification('録音再開', '録音を再開しました');
+
       logger.info('RecordingHandler', 'Recording resumed successfully');
 
       return { success: true };

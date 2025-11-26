@@ -6,9 +6,11 @@ import { registerFileHandlers } from './ipc/fileHandlers';
 import { registerSettingsHandlers } from './ipc/settingsHandlers';
 import databaseService from './services/DatabaseService';
 import fileService from './services/FileService';
+import trayService from './services/TrayService';
 import { logger } from './utils/logger';
 
 let mainWindow: BrowserWindow | null = null;
+let isQuitting = false;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -79,6 +81,24 @@ function createWindow() {
   // ウィンドウ準備完了後に表示
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
+    // トレイサービスを初期化
+    if (mainWindow) {
+      trayService.initialize(mainWindow);
+      logger.info('App', 'Tray service initialized');
+    }
+  });
+
+  // ウィンドウを閉じる際の処理（トレイに最小化）
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      mainWindow?.hide();
+      trayService.showNotification(
+        'Recording App',
+        'アプリはバックグラウンドで実行中です。トレイアイコンから操作できます。'
+      );
+      logger.info('App', 'Window hidden to tray');
+    }
   });
 
   mainWindow.on('closed', () => {
@@ -225,10 +245,11 @@ app.whenReady().then(async () => {
 });
 
 // すべてのウィンドウが閉じられたときの処理
+// トレイモードをサポートするため、ウィンドウが閉じてもアプリは終了しない
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  // macOSでは明示的に終了しない限りアプリを終了しない
+  // Windowsでもトレイモードをサポートするため、同様の動作にする
+  logger.info('App', 'All windows closed, running in tray mode');
 });
 
 // アプリケーション終了時のクリーンアップ
@@ -238,8 +259,13 @@ app.on('will-quit', () => {
 });
 
 app.on('before-quit', async () => {
+  isQuitting = true;
+
   try {
     logger.info('App', 'Application shutting down...');
+
+    // トレイを破棄
+    trayService.destroy();
 
     // 録音中の場合は停止する
     // TODO: 録音停止処理

@@ -148,6 +148,9 @@ const RecordingPanel: React.FC = () => {
   const handleStop = async () => {
     try {
       setLoading(true);
+      // すぐにカウンターを停止
+      const recordedDuration = duration;
+      setRecording(false);
 
       // RecordingServiceから録音データ取得（3つのBlob）
       const { micBlob, systemBlob, mixBlob } = await RecordingService.stopRecording();
@@ -171,15 +174,18 @@ const RecordingPanel: React.FC = () => {
       );
 
       if (result.success) {
-        setRecording(false);
-        message.success(`録音を保存しました（${formatDuration(duration)}）`);
+        message.success(`録音を保存しました（${formatDuration(recordedDuration)}）`);
         reset();
       } else {
         message.error(`録音保存エラー: ${result.error}`);
+        // エラーの場合は録音状態を元に戻す
+        setRecording(true);
       }
     } catch (error) {
       message.error('録音停止に失敗しました');
       console.error(error);
+      // エラーの場合は録音状態を元に戻す
+      setRecording(true);
     } finally {
       setLoading(false);
     }
@@ -234,7 +240,7 @@ const RecordingPanel: React.FC = () => {
     return () => clearInterval(intervalId);
   }, [isRecording, isPaused]);
 
-  // ホットキーイベントリスナー
+  // ホットキー・トレイイベントリスナー
   useEffect(() => {
     if (!window.electronAPI) return;
 
@@ -255,6 +261,40 @@ const RecordingPanel: React.FC = () => {
         handlePauseResume();
       }
     });
+
+    // トレイメニューからのイベント
+    const handleTrayStartRecording = () => {
+      console.log('Tray: Start Recording');
+      if (!isRecording) {
+        handleStart();
+      }
+    };
+
+    const handleTrayStopRecording = () => {
+      console.log('Tray: Stop Recording');
+      if (isRecording) {
+        handleStop();
+      }
+    };
+
+    const handleTrayTogglePause = () => {
+      console.log('Tray: Toggle Pause');
+      if (isRecording) {
+        handlePauseResume();
+      }
+    };
+
+    // イベントリスナーを登録
+    window.addEventListener('tray-start-recording', handleTrayStartRecording as any);
+    window.addEventListener('tray-stop-recording', handleTrayStopRecording as any);
+    window.addEventListener('tray-toggle-pause', handleTrayTogglePause as any);
+
+    // クリーンアップ
+    return () => {
+      window.removeEventListener('tray-start-recording', handleTrayStartRecording as any);
+      window.removeEventListener('tray-stop-recording', handleTrayStopRecording as any);
+      window.removeEventListener('tray-toggle-pause', handleTrayTogglePause as any);
+    };
   }, [isRecording, isPaused]); // 依存配列に状態を追加
 
   return (

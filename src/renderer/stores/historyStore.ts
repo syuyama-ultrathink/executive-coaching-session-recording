@@ -12,6 +12,7 @@ interface HistoryState {
   loadRecordings: () => Promise<void>;
   deleteRecording: (id: number) => Promise<void>;
   renameRecording: (id: number, newName: string) => Promise<void>;
+  updateMemo: (id: number, memo: string) => Promise<void>;
   setSearchText: (text: string) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;

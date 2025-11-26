@@ -72,7 +72,7 @@ export interface ElectronAPI {
   getDesktopSources?: () => Promise<DesktopCapturerSource[]>;
 
   // Save recording files
-  saveRecordingFiles?: (micBlob: Blob, systemBlob: Blob, mixBlob: Blob, metadata: RecordingMetadata) => Promise<{ success: boolean; error?: string }>;
+  saveRecordingFiles: (micBlob: Blob, systemBlob: Blob, mixBlob: Blob, metadata: RecordingMetadata) => Promise<{ success: boolean; error?: string }>;
 
   // Recordings
   getRecordings: () => Promise<Recording[]>;

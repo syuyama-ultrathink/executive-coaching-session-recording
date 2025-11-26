@@ -17,8 +17,8 @@ class RecordingService {
   private audioContext: AudioContext | null = null;
   private micAnalyser: AnalyserNode | null = null;
   private systemAnalyser: AnalyserNode | null = null;
-  private micDataArray: Uint8Array | null = null;
-  private systemDataArray: Uint8Array | null = null;
+  private micDataArray: Uint8Array<ArrayBuffer> | null = null;
+  private systemDataArray: Uint8Array<ArrayBuffer> | null = null;
 
   // Gain nodes for volume control (user-adjustable)
   private micGainNode: GainNode | null = null;
@@ -350,7 +350,7 @@ class RecordingService {
   /**
    * RMS値を計算
    */
-  private calculateRMS(dataArray: Uint8Array): number {
+  private calculateRMS(dataArray: Uint8Array<ArrayBuffer>): number {
     let sum = 0;
     for (let i = 0; i < dataArray.length; i++) {
       const normalized = (dataArray[i] - 128) / 128; // -1 to 1
